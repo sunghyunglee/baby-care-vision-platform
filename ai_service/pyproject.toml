@@ -2,4 +2,14 @@
 name = "ai-service"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "joblib==1.6.0",
+    "lap==0.5.14",
+    "numpy==2.5.5",
+    "opencv-python==5.1.0.95",
+    "pandas==3.1.1",
+    "scikit-learn==1.9.1",
+    "torch==2.15.0",
+    "torchvision==0.29.2",
+    "ultralytics==8.4.216",
+]
