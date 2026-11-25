@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import joblib
+from ultralytics import YOLO
 
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
@@ -34,12 +35,19 @@ def validate_model(model, feature_columns, training_info):
             raise ValueError("Feature column order mismatch")
 
 
+def load_pose_model():
+    model_path = MODEL_DIR / "yolo11n-pose.pt"
+    return YOLO(str(model_path))
+
+
 if __name__ == "__main__":
     model = load_rf_model()
     feature_columns = load_json("rf_feature_columns.json")
     training_info = load_json("rf_training_info.json")
 
     validate_model(model, feature_columns, training_info)
+
+    pose_model = load_pose_model()
 
     print("RF model loaded successfully")
     print("Model metadata validation passed")
@@ -49,3 +57,6 @@ if __name__ == "__main__":
     print("Model version:", training_info["model_version"])
     print("Danger threshold:", training_info["danger_threshold"])
     print("Repeat windows:", training_info["repeat_windows"])
+
+    print("YOLO Pose model loaded successfully")
+    print("YOLO task:", pose_model.task)
