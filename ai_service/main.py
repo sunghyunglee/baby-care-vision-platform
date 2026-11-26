@@ -1,10 +1,12 @@
 import json
+import math
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import cv2
 import joblib
+import numpy as np
 import torch
 from fastapi import FastAPI
 from ultralytics import YOLO
@@ -15,6 +17,37 @@ MODEL_DIR = Path(__file__).resolve().parent / "models"
 IMAGE_SIZE = 640
 PERSON_CONFIDENCE = 0.25
 TRACKER = "bytetrack.yaml"
+
+COCO_KEYPOINT_NAMES = (
+    "nose",
+    "left_eye",
+    "right_eye",
+    "left_ear",
+    "right_ear",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+)
+
+FRAME_FEATURE_NAMES = [
+    f"{name}_{axis}"
+    for name in COCO_KEYPOINT_NAMES
+    for axis in ("x", "y")
+] + [
+    "left_elbow_angle",
+    "right_elbow_angle",
+    "left_knee_angle",
+    "right_knee_angle",
+]
 
 
 def load_rf_model():
@@ -150,6 +183,105 @@ def select_main_track(frames):
         return None
 
     return max(scores, key=scores.get)
+
+def normalize_keypoints(keypoints):
+    keypoints = np.asarray(keypoints, dtype=np.float32)
+
+    center = (keypoints[11] + keypoints[12]) / 2.0
+    scale = float(np.linalg.norm(keypoints[5] - keypoints[6]))
+
+    if scale < 1e-8:
+        raise ValueError("Invalid shoulder width")
+
+    return (keypoints - center) / scale
+
+
+def calculate_angle(point_a, point_b, point_c):
+    a = np.asarray(point_a, dtype=np.float32)
+    b = np.asarray(point_b, dtype=np.float32)
+    c = np.asarray(point_c, dtype=np.float32)
+
+    vector_ba = a - b
+    vector_bc = c - b
+
+    norm_ba = np.linalg.norm(vector_ba)
+    norm_bc = np.linalg.norm(vector_bc)
+
+    if norm_ba < 1e-8 or norm_bc < 1e-8:
+        return float("nan")
+
+    cosine = np.dot(vector_ba, vector_bc) / (norm_ba * norm_bc)
+    cosine = np.clip(cosine, -1.0, 1.0)
+
+    return float(math.degrees(math.acos(float(cosine))))
+
+
+def selected_joint_angles(keypoints):
+    return [
+        calculate_angle(keypoints[5], keypoints[7], keypoints[9]),
+        calculate_angle(keypoints[6], keypoints[8], keypoints[10]),
+        calculate_angle(keypoints[11], keypoints[13], keypoints[15]),
+        calculate_angle(keypoints[12], keypoints[14], keypoints[16]),
+    ]
+
+
+def build_frame_feature(keypoints):
+    keypoints = np.asarray(keypoints, dtype=np.float32)
+
+    if keypoints.shape != (17, 2):
+        return None
+
+    if not np.all(np.isfinite(keypoints)):
+        return None
+
+    try:
+        normalized = normalize_keypoints(keypoints)
+    except ValueError:
+        return None
+
+    angles = selected_joint_angles(keypoints)
+
+    feature = np.concatenate([
+        normalized.reshape(-1),
+        np.asarray(angles, dtype=np.float32),
+    ])
+
+    if len(feature) != len(FRAME_FEATURE_NAMES):
+        raise RuntimeError("Frame feature count mismatch")
+
+    if not np.all(np.isfinite(feature)):
+        return None
+
+    return feature
+
+
+def extract_frame_features(frames, main_track):
+    features = []
+    timestamps = []
+
+    for frame in frames:
+        for person in frame["persons"]:
+            if person["track_id"] != main_track:
+                continue
+
+            feature = build_frame_feature(person["kp"])
+
+            if feature is not None:
+                features.append(feature)
+                timestamps.append(frame["timestamp_sec"])
+
+            break
+
+    if not features:
+        return (
+            np.empty((0, len(FRAME_FEATURE_NAMES)), dtype=np.float32),
+            np.empty(0, dtype=np.float64),
+        )
+
+    return (
+        np.stack(features),
+        np.asarray(timestamps, dtype=np.float64),
+    )
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
