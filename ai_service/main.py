@@ -1,4 +1,5 @@
 import json
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -126,6 +127,29 @@ def track_video(video_path, pose_model):
 
     return frames, fps
 
+def box_area(box):
+    width = max(box[2] - box[0], 0)
+    height = max(box[3] - box[1], 0)
+
+    return float(width * height)
+
+
+def select_main_track(frames):
+    scores = defaultdict(float)
+
+    for frame in frames:
+        for person in frame["persons"]:
+            track_id = person["track_id"]
+
+            if track_id < 0:
+                continue
+
+            scores[track_id] += box_area(person["box"])
+
+    if not scores:
+        return None
+
+    return max(scores, key=scores.get)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
