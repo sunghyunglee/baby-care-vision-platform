@@ -1,7 +1,9 @@
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import joblib
+from fastapi import FastAPI
 from ultralytics import YOLO
 
 
@@ -49,14 +51,20 @@ if __name__ == "__main__":
 
     pose_model = load_pose_model()
 
-    print("RF model loaded successfully")
-    print("Model metadata validation passed")
-    print("Classes:", model.classes_)
-    print("Feature count:", model.n_features_in_)
-    print("Feature columns:", len(feature_columns))
-    print("Model version:", training_info["model_version"])
-    print("Danger threshold:", training_info["danger_threshold"])
-    print("Repeat windows:", training_info["repeat_windows"])
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    model = load_rf_model()
+    feature_columns = load_json("rf_feature_columns.json")
+    training_info = load_json("rf_training_info.json")
 
-    print("YOLO Pose model loaded successfully")
-    print("YOLO task:", pose_model.task)
+    validate_model(model, feature_columns, training_info)
+
+    app.state.rf_model = model
+    app.state.feature_columns = feature_columns
+    app.state.training_info = training_info
+    app.state.pose_model = load_pose_model()
+
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
