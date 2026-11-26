@@ -482,6 +482,50 @@ def decide_video(predictions, training_info):
 
     return "SAFE"
 
+def predict_video(video_path, app: FastAPI) -> str:
+    pose_model = app.state.pose_model
+    rf_model = app.state.rf_model
+    feature_columns = app.state.feature_columns
+    training_info = app.state.training_info
+
+    expected_columns = [
+        f"t{step:02d}_{name}"
+        for step in range(training_info["sequence_steps"])
+        for name in FRAME_FEATURE_NAMES
+    ]
+
+    if expected_columns != feature_columns:
+        raise ValueError("Feature column order mismatch")
+
+    frames, _ = track_video(video_path, pose_model)
+
+    main_track = select_main_track(frames)
+
+    if main_track is None:
+        raise ValueError("No main performer detected")
+
+    features, timestamps = extract_frame_features(
+        frames,
+        main_track,
+    )
+
+    if len(features) < training_info["min_valid_frames"]:
+        raise ValueError("Insufficient valid pose frames")
+
+    windows = build_window_features(
+        features,
+        timestamps,
+        training_info,
+    )
+
+    predictions = predict_windows(
+        rf_model,
+        windows,
+        feature_columns,
+    )
+
+    return decide_video(predictions, training_info)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     model = load_rf_model()
