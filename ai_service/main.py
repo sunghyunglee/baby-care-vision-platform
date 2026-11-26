@@ -49,6 +49,7 @@ FRAME_FEATURE_NAMES = [
     "right_knee_angle",
 ]
 
+DANGER_CLASSES = ("shake", "drop", "look_away")
 
 def load_rf_model():
     model_path = MODEL_DIR / "rf_action_baseline.joblib"
@@ -435,6 +436,51 @@ def predict_windows(rf_model, windows, feature_columns):
         })
 
     return results
+
+def decide_video(predictions, training_info):
+    threshold = training_info["danger_threshold"]
+    repeat_windows = training_info["repeat_windows"]
+
+    streak_label = None
+    streak = 0
+    has_invalid_window = False
+
+    if not predictions:
+        raise ValueError("No analysis windows")
+
+    for prediction in predictions:
+        probabilities = prediction["probabilities"]
+
+        if probabilities is None:
+            streak_label = None
+            streak = 0
+            has_invalid_window = True
+            continue
+
+        danger_label = max(
+            DANGER_CLASSES,
+            key=lambda label: probabilities[label],
+        )
+
+        danger_probability = probabilities[danger_label]
+
+        if danger_probability >= threshold:
+            if streak_label == danger_label:
+                streak += 1
+            else:
+                streak_label = danger_label
+                streak = 1
+        else:
+            streak_label = None
+            streak = 0
+
+        if streak >= repeat_windows:
+            return "DANGER"
+
+    if has_invalid_window:
+        raise ValueError("Incomplete video analysis")
+
+    return "SAFE"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
