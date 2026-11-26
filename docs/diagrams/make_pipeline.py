@@ -96,30 +96,28 @@ section(T('① 학습 완료 모델 파일 — ai_service/models/', '① Trained
       [T('입력 = 특징 1,140개', 'input = 1,140 features'),
        'classes_ = OTHER · drop · look_away · shake',
        T('predict_proba → 4개 클래스 확률', 'predict_proba → 4 class probabilities')], True),
-    B('js', 'R', 'mdl', T('rf_feature_columns.json · rf_training_info.json', 'rf_feature_columns.json · rf_training_info.json'),
-      T('컬럼 순서 · 구간 · 판정 기준값', 'Column order · windows · thresholds'),
-      [T('컬럼 1,140개: t00_nose_x … t29_right_knee_angle', '1,140 columns: t00_nose_x … t29_right_knee_angle'),
-       'classes · feature_count · sequence_steps 30',
+    B('js', 'R', 'mdl', 'rf_training_info.json', T('규격 · 구간 · 판정 기준값', 'Spec · windows · thresholds'),
+      ['classes · feature_count 1,140 · sequence_steps 30',
        'window_seconds · window_stride_seconds · min_valid_frames',
        'danger_threshold 0.35 · repeat_windows 2']),
 ]])
 
 section(T('② 서버 시작 — ai_service/main.py lifespan (켤 때 1번)', '② Start-up — ai_service/main.py lifespan (once)'),
-        T('요청이 오기 전에 모델 4개를 한 번만 로드하고 규격(특징 수 · 클래스 · 컬럼 순서)이 맞는지 확인',
-          'Load the 4 model files once before any request and check feature count · classes · column order'), [[
+        T('요청이 오기 전에 모델 파일 3개를 한 번만 로드하고 규격(특징 수 · 클래스)이 학습 때와 같은지 확인',
+          'Load the 3 model files once before any request and check feature count · classes match training'), [[
     B('const', 'L', 'cfg', T('main.py 상수', 'main.py constants'), T('추론 설정값', 'Inference settings'),
       ['IMAGE_SIZE 640 · PERSON_CONFIDENCE 0.25', 'TRACKER bytetrack.yaml',
        'DANGER_CLASSES = shake · drop · look_away',
-       T('resolve_device(): GPU 있으면 0, 없으면 cpu', 'resolve_device(): GPU → 0, else cpu')]),
-    B('life', 'C', 'py', 'lifespan(app)', T('모델 로드 + 규격 확인', 'Load models + validate'),
-      ['load_rf_model() · load_json() × 2 · load_pose_model()',
-       T('validate_model(): 특징 수 1,140 · classes 순서', 'validate_model(): 1,140 features · class order'),
-       T('feature_names_in_ = rf_feature_columns 순서', 'feature_names_in_ = rf_feature_columns order'),
+       T('장치: GPU 있으면 0, 없으면 cpu', 'device: GPU → 0, else cpu')]),
+    B('life', 'C', 'py', 'lifespan(app) → load_models()', T('모델 로드 + 규격 확인', 'Load models + validate'),
+      ['joblib.load · load_json(rf_training_info) · YOLO(pt)',
+       T('validate_model(): n_features_in_ = feature_count', 'validate_model(): n_features_in_ = feature_count'),
+       T('classes_ = training_info["classes"] (순서까지)', 'classes_ = training_info["classes"] (same order)'),
        T('하나라도 다르면 서버가 켜지지 않음', 'any mismatch → server does not start')]),
   ], [
     B('state', 'C', 'dat', 'app.state', T('요청마다 재사용할 객체', 'Reused on every request'),
-      ['rf_model · feature_columns · training_info',
-       T('pose_model · pose_lock (동시 요청 추적 충돌 방지)', 'pose_model · pose_lock (no tracker clash)')]),
+      ['models = {rf_model · training_info · pose_model}',
+       T('pose_lock (동시 요청 추적 충돌 방지)', 'pose_lock (no tracker clash between requests)')]),
     B('health', 'R', 'res', 'GET /health', T('서버 상태 확인', 'Health check'),
       ['{"status": "ok"}', T('lifespan 이 끝나야 응답 → 모델 준비 완료 신호', 'answers only after lifespan → models ready')]),
 ]])
@@ -133,7 +131,7 @@ section(T('③ 영상 입력 — POST /predict', '③ Video in — POST /predict
        '  files={"file": ...}, timeout=60)']),
     B('pred', 'C', 'py', 'predict(file: UploadFile)', T('추론 API 입구', 'Inference entry'),
       [T('NamedTemporaryFile(suffix=.mp4) 에 복사', 'copy to NamedTemporaryFile(suffix=.mp4)'),
-       'predict_video(temp_video.name, app)',
+       'analyze_video(temp, app.state.models, pose_lock)',
        T('ValueError → HTTPException 422', 'ValueError → HTTPException 422'),
        T('요청이 끝나면 임시 파일 자동 삭제', 'temp file deleted after the request')]),
     B('e422', 'R', 'res', '422 Unprocessable Entity', T('분석 불가 사유', 'Why it cannot analyse'),
@@ -141,7 +139,7 @@ section(T('③ 영상 입력 — POST /predict', '③ Video in — POST /predict
        'Insufficient valid pose frames', 'Incomplete video analysis']),
 ]])
 
-section(T('④ 포즈 → 특징 — predict_video()', '④ Pose → features — predict_video()'),
+section(T('④ 포즈 → 특징 — analyze_video()', '④ Pose → features — analyze_video()'),
         T('프레임마다 사람을 추적하고 주 인물 1명의 관절을 38개 숫자로 바꾼 뒤, 시간 구간마다 30스텝 = 1,140 특징을 만든다',
           'Track people per frame, turn the main person\'s joints into 38 numbers, then build 30 steps = 1,140 features per time window'), [[
     B('track', 'C', 'py', 'track_video()', T('프레임마다 사람 추적', 'Track people per frame'),
@@ -150,15 +148,15 @@ section(T('④ 포즈 → 특징 — predict_video()', '④ Pose → features �
        T('끝나면 tracker.reset() (다음 요청과 섞이지 않게)', 'tracker.reset() at the end (next request starts clean)')]),
   ], [
     B('frames', 'C', 'dat', 'frames', T('프레임별 사람 목록', 'People per frame'),
-      ['frame_id · timestamp_sec', 'persons: track_id · box · kp (17, 2)']),
+      ['timestamp_sec', 'persons: track_id · box · keypoints (17, 2)']),
   ], [
     B('main', 'C', 'py', 'select_main_track()', T('주 인물 1명 선택', 'Pick the main person'),
       [T('track 별 박스 면적 합 → 가장 큰 track_id', 'sum of box area per track → largest track_id'),
        T('사람이 없으면 422', 'no person → 422')]),
   ], [
     B('ff', 'L', 'py', 'build_frame_feature()', T('정규화 · 관절 각도', 'Normalise · joint angles'),
-      [T('normalize_keypoints(): 엉덩이 중심 빼고 어깨 너비로 나눔', 'normalize_keypoints(): minus hip centre, ÷ shoulder width'),
-       T('selected_joint_angles(): 팔꿈치 2 · 무릎 2', 'selected_joint_angles(): 2 elbows · 2 knees'),
+      [T('골반 중심을 빼고 어깨 너비로 나눠 정규화', 'minus pelvis centre, ÷ shoulder width'),
+       T('calculate_angle() × 4: 팔꿈치 2 · 무릎 2', 'calculate_angle() × 4: 2 elbows · 2 knees'),
        T('NaN · 어깨 너비 0 → 그 프레임 제외', 'NaN · zero shoulder width → frame skipped')]),
     B('feat', 'C', 'dat', 'features (N, 38) · timestamps', T('주 인물의 프레임별 특징', 'Main person per-frame features'),
       ['extract_frame_features()', T('관절 17 × 2 + 각도 4 = 38', '17 joints × 2 + 4 angles = 38'),
@@ -167,25 +165,22 @@ section(T('④ 포즈 → 특징 — predict_video()', '④ Pose → features �
     B('ti', 'L', 'mdl', 'rf_training_info.json', T('구간 기준', 'Window settings'),
       ['window_seconds · window_stride_seconds', 'sequence_steps 30 · min_valid_frames']),
     B('win', 'C', 'py', 'build_window_features()', T('시간 구간 → 고정 길이', 'Windows → fixed length'),
-      ['sliding_windows(window_seconds, stride)',
+      [T('window_seconds 길이 · stride 간격으로 구간 이동', 'slide windows by window_seconds · stride'),
        T('resample_sequence(): 구간마다 30스텝으로 보간', 'resample_sequence(): interpolate to 30 steps'),
        T('30 × 38 = 1,140 (프레임 부족 구간 = None)', '30 × 38 = 1,140 (too few frames → None)')]),
-    B('fc', 'R', 'mdl', 'rf_feature_columns.json', T('컬럼 순서 검증', 'Column order check'),
-      [T('predict_video() 시작 시', 'at the start of predict_video()'),
-       'expected_columns == feature_columns', T('다르면 422', 'mismatch → 422')]),
 ]])
 
-section(T('⑤ 판정 → 응답 — RandomForest · decide_video()', '⑤ Decide → reply — RandomForest · decide_video()'),
+section(T('⑤ 판정 → 응답 — decide_result()', '⑤ Decide → reply — decide_result()'),
         T('구간마다 4클래스 확률을 내고, 위험 동작이 같은 동작으로 2구간 연속 0.35 이상이면 DANGER',
           '4-class probabilities per window; DANGER if the same danger action is ≥ 0.35 in 2 windows in a row'), [[
-    B('rfp', 'C', 'mdl', T('predict_windows() · RandomForest', 'predict_windows() · RandomForest'), T('구간별 4클래스 확률', '4-class prob. per window'),
+    B('rfp', 'C', 'mdl', T('RandomForest.predict_proba()', 'RandomForest.predict_proba()'), T('구간별 4클래스 확률', '4-class prob. per window'),
       ['rf_model.predict_proba(1 × 1,140)', 'probabilities: OTHER · drop · look_away · shake',
-       T('None 구간은 확률 없음', 'None window → no probabilities')], True),
+       T('decide_result() 안에서 구간마다 호출', 'called per window inside decide_result()')], True),
   ], [
     B('th', 'L', 'cfg', T('판정 기준값', 'Decision thresholds'), T('코드가 아니라 파일에서 읽음', 'read from files, not code'),
       ['danger_threshold 0.35 · repeat_windows 2', '(rf_training_info.json)',
        'DANGER_CLASSES = drop · look_away · shake']),
-    B('dec', 'C', 'py', 'decide_video()', T('영상 1개 → SAFE / DANGER', 'One video → SAFE / DANGER'),
+    B('dec', 'C', 'py', T('decide_result() 판정', 'decide_result() decision'), T('영상 1개 → SAFE / DANGER', 'One video → SAFE / DANGER'),
       [T('구간마다 위험 동작 3개 중 가장 높은 확률', 'per window: highest of the 3 danger actions'),
        T('≥ 0.35 · 같은 동작 2구간 연속 → 바로 DANGER', '≥ 0.35 · same action 2 windows in a row → DANGER'),
        T('끝까지 없으면 SAFE (빈 구간이 있었으면 422)', 'none until the end → SAFE (gap window → 422)')], True),
@@ -235,7 +230,7 @@ def elbow(a, b, tx_off, lab=None, dash=False, ym=None):
 down('rf', 'life', T('모델 파일 로드', 'load model files'))
 GAP = (sections[0][1] + sections[1][0]) / 2
 elbow('pt', 'life', -170, 'yolo11n-pose.pt', ym=GAP)
-elbow('js', 'life', 170, T('json 2개', '2 json files'), ym=GAP)
+elbow('js', 'life', 170, 'rf_training_info.json', ym=GAP)
 side('const', 'life', T('설정값', 'settings'))
 down('life', 'state', 'app.state')
 side('state', 'health', T('준비 완료', 'ready'))
@@ -249,7 +244,6 @@ down('main', 'feat', T('주 인물 track_id', 'main track_id'))
 side('ff', 'feat', T('프레임당 38', '38 per frame'))
 down('feat', 'win', 'features · timestamps')
 side('ti', 'win', T('구간 · 30스텝', '30 steps'))
-side('fc', 'win', T('순서 검증', 'order check'))
 down('win', 'rfp', T('구간마다 1,140', '1,140 per window'))
 down('rfp', 'dec', T('구간별 확률', 'probabilities'))
 side('th', 'dec', T('0.35 · 2구간', 'thresholds'))
@@ -260,7 +254,7 @@ S, R_ = bx('state'), bx('rfp')
 ys = S['y'] + S['h'] / 2
 yr = R_['y'] + R_['h'] / 2
 path(f'M{S["x"]},{ys} L{56},{ys} L{56},{yr} L{R_["x"] - 4},{yr}', '#9aa3b2', '7 6')
-label(400, yr - 12, 'app.state.rf_model', 13)
+label(400, yr - 12, 'models["rf_model"]', 13)
 arrows = o[:]; o.clear()
 
 for b in boxes.values():
@@ -272,8 +266,8 @@ ly = y + 20
 s = '● result'
 w = tw(s, 15) + 26
 rect(70, ly - 20, w, 28, '#fff', '#d32f2f', 14, '', 2); t(70 + w / 2, ly, s, 15, '#d32f2f', 'bold', 'middle')
-t(70 + w + 18, ly, T('classes_ 순서 → predict_proba → decide_video → JSON result → Django Analysis.result → 화면 (정답이 아니라 모델 예측값)',
-                     'classes_ order → predict_proba → decide_video → JSON result → Django Analysis.result → page (a model prediction, not ground truth)'), 16, '#3a4252')
+t(70 + w + 18, ly, T('classes_ 순서 → predict_proba → decide_result → JSON result → Django Analysis.result → 화면 (정답이 아니라 모델 예측값)',
+                     'classes_ order → predict_proba → decide_result → JSON result → Django Analysis.result → page (a model prediction, not ground truth)'), 16, '#3a4252')
 ly += 50
 lx = 70
 for k, lab in [('cfg', T('설정값', 'Settings')), ('vid', T('영상', 'Video')), ('py', T('Python 처리', 'Python step')),
