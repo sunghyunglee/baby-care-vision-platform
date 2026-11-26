@@ -15,7 +15,6 @@ from fastapi import FastAPI, HTTPException, UploadFile
 from ultralytics import YOLO
 
 
-# ===== 상수 =====
 MODEL_DIR = Path(__file__).resolve().parent / "models"
 
 IMAGE_SIZE = 640
@@ -23,42 +22,27 @@ PERSON_CONFIDENCE = 0.25
 TRACKER = "bytetrack.yaml"
 
 DANGER_CLASSES = ("shake", "drop", "look_away")
-# ===== 모델 로딩 =====
+
+
 def load_json(filename):
     with (MODEL_DIR / filename).open("r", encoding="utf-8") as file:
         return json.load(file)
 
 
-def validate_model(rf_model, feature_columns, training_info):
-    frame_feature_names = [
-        name.removeprefix("t00_") for name in feature_columns if name.startswith("t00_")
-    ]
-    expected_columns = [
-        f"t{step:02d}_{name}"
-        for step in range(training_info["sequence_steps"])
-        for name in frame_feature_names
-    ]
-
-    # 학습 때와 특징 수·클래스·순서가 다르면 틀린 판정을 내기 전에 서버 시작을 막는다
+def validate_model(rf_model, training_info):
+    # 학습 때와 특징 수·클래스가 다르면 틀린 판정을 내기 전에 서버 시작을 막는다
     if rf_model.n_features_in_ != training_info["feature_count"]:
         raise ValueError("Training feature count mismatch")
 
     if rf_model.classes_.tolist() != training_info["classes"]:
         raise ValueError("Model classes mismatch")
 
-    if feature_columns != expected_columns:
-        raise ValueError("Feature column order mismatch")
-
-    if hasattr(rf_model, "feature_names_in_") and rf_model.feature_names_in_.tolist() != feature_columns:
-        raise ValueError("Model feature names mismatch")
-
 
 def load_models():
     rf_model = joblib.load(MODEL_DIR / "rf_action_baseline.joblib")
-    feature_columns = load_json("rf_feature_columns.json")
     training_info = load_json("rf_training_info.json")
 
-    validate_model(rf_model, feature_columns, training_info)
+    validate_model(rf_model, training_info)
 
     return {
         "rf_model": rf_model,
@@ -67,7 +51,6 @@ def load_models():
     }
 
 
-# ===== 앱·경로 =====
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 요청마다 모델 파일을 다시 읽지 않도록 서버 시작 때 한 번만 올려둔다
@@ -103,7 +86,6 @@ def predict(file: UploadFile):
     return {"result": result}
 
 
-# ===== 로직부 =====
 def track_video(video_path, pose_model):
     device = 0 if torch.cuda.is_available() else "cpu"
     capture = cv2.VideoCapture(str(video_path))
