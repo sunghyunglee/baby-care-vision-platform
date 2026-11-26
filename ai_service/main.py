@@ -2,12 +2,18 @@ import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import cv2
 import joblib
+import torch
 from fastapi import FastAPI
 from ultralytics import YOLO
 
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
+
+IMAGE_SIZE = 640
+PERSON_CONFIDENCE = 0.25
+TRACKER = "bytetrack.yaml"
 
 
 def load_rf_model():
@@ -40,6 +46,85 @@ def validate_model(model, feature_columns, training_info):
 def load_pose_model():
     model_path = MODEL_DIR / "yolo11n-pose.pt"
     return YOLO(str(model_path))
+
+
+def resolve_device():
+    if torch.cuda.is_available():
+        return 0
+
+    return "cpu"
+
+
+def track_video(video_path, pose_model):
+    device = resolve_device()
+    cap = cv2.VideoCapture(str(video_path))
+
+    frames = []
+    frame_id = 0
+
+    try:
+        if not cap.isOpened():
+            raise ValueError("Cannot open video")
+
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+
+        while True:
+            ok, frame = cap.read()
+
+            if not ok:
+                break
+
+            result = pose_model.track(
+                frame,
+                persist=True,
+                tracker=TRACKER,
+                imgsz=IMAGE_SIZE,
+                conf=PERSON_CONFIDENCE,
+                device=device,
+                verbose=False,
+            )[0]
+
+            persons = []
+
+            if (
+                result.boxes is not None
+                and result.boxes.id is not None
+                and result.keypoints is not None
+                and result.keypoints.conf is not None
+            ):
+                ids = result.boxes.id.cpu().numpy().astype(int)
+                boxes = result.boxes.xyxy.cpu().numpy()
+                keypoints = result.keypoints.xy.cpu().numpy()
+                confidences = result.keypoints.conf.cpu().numpy()
+
+                for i, track_id in enumerate(ids):
+                    persons.append({
+                        "track_id": int(track_id),
+                        "box": boxes[i],
+                        "kp": keypoints[i],
+                        "kp_conf": confidences[i],
+                    })
+
+            frames.append({
+                "frame_id": frame_id,
+                "timestamp_sec": frame_id / fps,
+                "persons": persons,
+            })
+
+            frame_id += 1
+
+        if not frames:
+            raise ValueError("No readable video frames")
+
+    finally:
+        cap.release()
+
+        predictor = getattr(pose_model, "predictor", None)
+
+        for tracker in getattr(predictor, "trackers", []):
+            tracker.reset()
+
+    return frames, fps
 
 
 @asynccontextmanager
