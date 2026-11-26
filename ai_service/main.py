@@ -1,5 +1,7 @@
 import json
 import math
+import shutil
+import tempfile
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,7 +11,7 @@ import cv2
 import joblib
 import numpy as np
 import torch
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, UploadFile
 from ultralytics import YOLO
 
 
@@ -553,3 +555,22 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/predict")
+def predict(file: UploadFile):
+    suffix = Path(file.filename or "").suffix or ".mp4"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix) as temp_video:
+        shutil.copyfileobj(file.file, temp_video)
+        temp_video.flush()
+
+        try:
+            result = predict_video(temp_video.name, app)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    return {"result": result}
