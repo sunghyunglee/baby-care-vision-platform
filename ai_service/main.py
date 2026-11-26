@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from fastapi import FastAPI
 from ultralytics import YOLO
+from threading import Lock
 
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
@@ -538,6 +539,7 @@ async def lifespan(app: FastAPI):
     app.state.feature_columns = feature_columns
     app.state.training_info = training_info
     app.state.pose_model = load_pose_model()
+    app.state.pose_lock = Lock()
 
     yield
 
