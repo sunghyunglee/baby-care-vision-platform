@@ -283,6 +283,117 @@ def extract_frame_features(frames, main_track):
         np.asarray(timestamps, dtype=np.float64),
     )
 
+def sliding_windows(timestamps, window_seconds, stride_seconds):
+    if len(timestamps) == 0:
+        return []
+
+    start = float(timestamps.min())
+    last = float(timestamps.max())
+
+    windows = []
+
+    while start + window_seconds <= last + 1e-6:
+        end = start + window_seconds
+
+        windows.append((start, end))
+        start += stride_seconds
+
+    return windows
+
+
+def resample_sequence(features, timestamps, target_steps):
+    features = np.asarray(features, dtype=np.float32)
+    timestamps = np.asarray(timestamps, dtype=np.float32)
+
+    if features.ndim != 2:
+        raise ValueError("Invalid feature dimensions")
+
+    if len(features) != len(timestamps):
+        raise ValueError("Feature and timestamp count mismatch")
+
+    if len(features) < 2:
+        raise ValueError("At least two frames are required")
+
+    if target_steps < 2:
+        raise ValueError("At least two target steps are required")
+
+    span = timestamps[-1] - timestamps[0]
+
+    if span <= 0:
+        raise ValueError("Invalid timestamp range")
+
+    original_x = (timestamps - timestamps[0]) / span
+    target_x = np.linspace(0.0, 1.0, target_steps)
+
+    output = np.empty(
+        (target_steps, features.shape[1]),
+        dtype=np.float32,
+    )
+
+    for feature_index in range(features.shape[1]):
+        output[:, feature_index] = np.interp(
+            target_x,
+            original_x,
+            features[:, feature_index],
+        )
+
+    return output
+
+
+def window_vector(
+    timestamps,
+    features,
+    start,
+    end,
+    steps,
+    min_valid_frames,
+):
+    mask = (timestamps >= start) & (timestamps < end)
+
+    if mask.sum() < max(min_valid_frames, 2):
+        return None
+
+    sequence = resample_sequence(
+        features[mask],
+        timestamps[mask],
+        steps,
+    )
+
+    return sequence.reshape(-1)
+
+
+def build_window_features(features, timestamps, training_info):
+    window_seconds = training_info["window_seconds"]
+    stride_seconds = training_info["window_stride_seconds"]
+    steps = training_info["sequence_steps"]
+    min_valid_frames = training_info["min_valid_frames"]
+
+    windows = sliding_windows(
+        timestamps,
+        window_seconds,
+        stride_seconds,
+    )
+
+    results = []
+
+    for start, end in windows:
+        vector = window_vector(
+            timestamps,
+            features,
+            start,
+            end,
+            steps,
+            min_valid_frames,
+        )
+
+        results.append({
+            "start": start,
+            "end": end,
+            "features": vector,
+        })
+
+    return results
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     model = load_rf_model()
