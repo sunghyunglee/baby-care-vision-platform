@@ -13,14 +13,6 @@
   <img src="https://img.shields.io/badge/Ultralytics-YOLO11_Pose-111F68?logo=ultralytics&logoColor=white" alt="YOLO11 Pose"> <img src="https://img.shields.io/badge/scikit--learn-RandomForest-F7931E?logo=scikitlearn&logoColor=white" alt="scikit-learn RandomForest"> <img src="https://img.shields.io/badge/uv-package_manager-DE5FE9?logo=uv&logoColor=white" alt="uv"> <img src="https://img.shields.io/badge/Ubuntu-WSL2-E95420?logo=ubuntu&logoColor=white" alt="WSL2"> <img src="https://img.shields.io/badge/GitHub-PR_Flow-181717?logo=github&logoColor=white" alt="GitHub PR Flow">
 </p>
 
-## 목차
-
-1. [프로젝트 소개](#프로젝트-소개) · [Architecture](#architecture) · [Pipeline](#pipeline) · [작업 결과](#작업-결과) · [작동 화면](#작동-화면) · [API 계약](#api-계약) · [팀원 소개](#팀원-소개)
-2. [빠른 시작](#빠른-시작)
-3. [폴더 구조](#폴더-구조)
-4. [한계 · 향후 계획](#한계--향후-계획)
-5. [주의사항](#주의사항)
-
 <br>
 
 ## 프로젝트 소개
