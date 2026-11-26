@@ -36,7 +36,7 @@ The browser sends the video as `FormData`. Django validates it with a Serializer
 | Server | Role | Design points |
 |---|---|---|
 | Django `:8000` | Page (`GET /`) · analysis API (`POST /api/v1/analyses/`) · storage | Two class-based views · Serializer validation · AI address in `settings.AI_SERVICE_URL` · 60 s call timeout |
-| FastAPI `:8001` | Health (`GET /health`) · decision (`POST /predict`) | Loads the 4 model files once in lifespan · checks classes · feature count · column order · no DB |
+| FastAPI `:8001` | Health (`GET /health`) · decision (`POST /predict`) | Loads 3 model files (`.joblib` · `rf_training_info.json` · `.pt`) once in lifespan · checks feature count · classes · no DB |
 
 <br>
 
@@ -53,9 +53,9 @@ How the AI server (FastAPI) turns one video into `SAFE` / `DANGER`: model files 
 | Area | Result |
 |---|---|
 | API contract | All 4 contracts implemented — Django `GET /` · `POST /api/v1/analyses/`, FastAPI `GET /health` · `POST /predict` |
-| Collaboration | 3 part branches → PR #2 ~ #5 reviewed and merged into `main` · direct push to `main` blocked |
+| Collaboration | 3 part branches → PR #1 ~ #6 reviewed and merged into `main` · direct push to `main` blocked |
 | End to end | Page → Django → FastAPI → DB → page confirmed (`wave.mp4` → **위험 미감지 / no danger**) |
-| Improvements | Input moved from the view into `AnalysisSerializer` validation · AI address moved to `settings.AI_SERVICE_URL` · `timeout=60` on the AI call · 201 on success |
+| Improvements | Input moved from the view into `AnalysisSerializer` validation · AI address moved to `settings.AI_SERVICE_URL` · `timeout=60` on the AI call · 201 on success · AI `main.py` duplicate code cleaned up (PR #6, same structure · API · results) |
 
 <br>
 
@@ -94,10 +94,18 @@ On screen, `SAFE` → "위험 미감지" and `DANGER` → "위험 감지". The A
 |---|---|---|
 | 이성형 (Sung Hyung Lee) | PM · Backend 1 | `views.py` · `serializers.py` · GitHub repository · branch rules · PR review · merge |
 | 박하솔 | Backend 2 | `settings.py` · `urls.py` · `models.py` · migration |
-| 박하나 | AI 1 | Model loading (lifespan) · decision functions (`predict_video` · `decide_video`) |
+| 박하나 | AI 1 | Model loading (lifespan) · decision functions (`analyze_video` · `decide_result`) |
 | 이상직 | AI 2 | `GET /health` · `POST /predict` · `main.py` clean-up |
 | 김준형 | Front 1 | `templates/index.html` |
 | 장세훈 | Front 2 | `static/js/analysis.js` |
+
+<br>
+
+### Schedule (WBS)
+
+The scope is split into phase → work → details, and each detail has an owner and a time slot in a 3-day plan. Done items follow GitHub commit and PR merge times.
+
+![baby-care-vision-platform WBS schedule](docs/images/wbs.en.png)
 
 <br><br>
 
@@ -120,7 +128,7 @@ cd baby-care-vision-platform
 |---|---|
 | `yolo11n-pose.pt` | 17 body keypoints (YOLO11 Pose) |
 | `rf_action_baseline.joblib` | 4-action RandomForest |
-| `rf_feature_columns.json` | Column order of the 1,140 features |
+| `rf_feature_columns.json` | Column order of the 1,140 features (training record · not read by the current `main.py`) |
 | `rf_training_info.json` | Classes · windows · decision thresholds |
 
 **Step 3 · ① Start FastAPI (8001)** — keep this terminal open.

@@ -36,7 +36,7 @@
 | 서버 | 역할 | 설계 포인트 |
 |---|---|---|
 | Django `:8000` | 화면 (`GET /`) · 분석 API (`POST /api/v1/analyses/`) · 저장 | 클래스 기반 View 2개 · Serializer 검증 · AI 주소는 `settings.AI_SERVICE_URL` · 호출 timeout 60초 |
-| FastAPI `:8001` | 상태 확인 (`GET /health`) · 판정 (`POST /predict`) | 모델 4개를 lifespan 에서 1번만 로드 · 클래스 · 특징 수 · 컬럼 순서 검증 · DB 비의존 |
+| FastAPI `:8001` | 상태 확인 (`GET /health`) · 판정 (`POST /predict`) | 모델 3개(`.joblib` · `rf_training_info.json` · `.pt`)를 lifespan 에서 1번만 로드 · 특징 수 · 클래스 검증 · DB 비의존 |
 
 <br>
 
@@ -53,9 +53,9 @@ AI 서버(FastAPI)가 영상 1개를 `SAFE` / `DANGER` 로 판정하는 과정�
 | 구분 | 결과 |
 |---|---|
 | API 계약 | 계약 4개 구현 — Django `GET /` · `POST /api/v1/analyses/`, FastAPI `GET /health` · `POST /predict` |
-| 협업 | 파트 브랜치 3개 → PR #2 ~ #5 리뷰 후 `main` 머지 · `main` 직접 push 차단 |
+| 협업 | 파트 브랜치 3개 → PR #1 ~ #6 리뷰 후 `main` 머지 · `main` 직접 push 차단 |
 | 전체 흐름 | 화면 → Django → FastAPI → DB → 화면 연결 확인 (`wave.mp4` → **위험 미감지**) |
-| 개선 | View 에서 직접 받던 입력을 `AnalysisSerializer` 검증으로 변경 · AI 주소를 `settings.AI_SERVICE_URL` 로 분리 · AI 호출 `timeout=60` 추가 · 성공 응답 201 |
+| 개선 | View 에서 직접 받던 입력을 `AnalysisSerializer` 검증으로 변경 · AI 주소를 `settings.AI_SERVICE_URL` 로 분리 · AI 호출 `timeout=60` 추가 · 성공 응답 201 · AI `main.py` 중복 정리 (PR #6, 구조 · API · 판정 결과 동일) |
 
 <br>
 
@@ -94,10 +94,18 @@ AI 서버(FastAPI)가 영상 1개를 `SAFE` / `DANGER` 로 판정하는 과정�
 |---|---|---|
 | 이성형 | PM · 백엔드 1 | `views.py` · `serializers.py` · GitHub 저장소 · 브랜치 규칙 · PR 리뷰 · 머지 |
 | 박하솔 | 백엔드 2 | `settings.py` · `urls.py` · `models.py` · migration |
-| 박하나 | AI 1 | 모델 로드 (lifespan) · 판정 함수 (`predict_video` · `decide_video`) |
+| 박하나 | AI 1 | 모델 로드 (lifespan) · 판정 함수 (`analyze_video` · `decide_result`) |
 | 이상직 | AI 2 | `GET /health` · `POST /predict` · `main.py` 코드 정리 |
 | 김준형 | 프론트 1 | `templates/index.html` |
 | 장세훈 | 프론트 2 | `static/js/analysis.js` |
+
+<br>
+
+### 일정 (WBS)
+
+범위를 진행단계 → 수행내용 → 상세수행내용으로 나누고, 상세수행내용마다 담당 · 기간을 정해 3일 일정으로 관리했습니다. 완료 칸은 GitHub 커밋 · PR 머지 시각 기준입니다.
+
+![baby-care-vision-platform WBS 일정](docs/images/wbs.png)
 
 <br><br>
 
@@ -120,7 +128,7 @@ cd baby-care-vision-platform
 |---|---|
 | `yolo11n-pose.pt` | 사람 관절 17개 추출 (YOLO11 Pose) |
 | `rf_action_baseline.joblib` | 4개 동작 RandomForest |
-| `rf_feature_columns.json` | 특징 1,140개 컬럼 순서 |
+| `rf_feature_columns.json` | 특징 1,140개 컬럼 순서 (학습 기록용 · 현재 `main.py` 는 읽지 않음) |
 | `rf_training_info.json` | 클래스 · 구간 · 판정 기준값 |
 
 **3단계 · ① FastAPI 실행 (8001)** — 터미널 하나를 켜 둡니다.

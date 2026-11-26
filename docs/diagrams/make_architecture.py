@@ -55,7 +55,7 @@ top = [
     ('views.py · serializers.py', T('이성형 · 백엔드 1', '이성형 · Backend 1')),
     ('models.py · migrations/', T('박하솔 · 백엔드 2', '박하솔 · Backend 2')),
     ('ai_service/main.py', T('이상직 · AI 2', '이상직 · AI 2')),
-    ('main.py  predict_video()', T('박하나 · AI 1', '박하나 · AI 1')),
+    ('main.py  analyze_video()', T('박하나 · AI 1', '박하나 · AI 1')),
     ('analysis.js  showResult()', T('장세훈 · 프론트 2', '장세훈 · Front 2')),
 ]
 CT, CH = 178, 62
@@ -92,7 +92,7 @@ fw = [
     ('/api/v1/analyses/', 'AnalysisAPIView'),
     ('serializer.save()', 'video → media/'),
     ('POST /predict', 'multipart file'),
-    (T('임시 파일 경로', 'temp file path'), 'predict_video()'),
+    (T('임시 파일 경로', 'temp file path'), 'analyze_video()'),
 ]
 AY = NY + NH / 2
 for i, (a, b) in enumerate(fw):
