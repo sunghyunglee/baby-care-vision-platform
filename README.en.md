@@ -13,14 +13,6 @@
   <img src="https://img.shields.io/badge/Ultralytics-YOLO11_Pose-111F68?logo=ultralytics&logoColor=white" alt="YOLO11 Pose"> <img src="https://img.shields.io/badge/scikit--learn-RandomForest-F7931E?logo=scikitlearn&logoColor=white" alt="scikit-learn RandomForest"> <img src="https://img.shields.io/badge/uv-package_manager-DE5FE9?logo=uv&logoColor=white" alt="uv"> <img src="https://img.shields.io/badge/Ubuntu-WSL2-E95420?logo=ubuntu&logoColor=white" alt="WSL2"> <img src="https://img.shields.io/badge/GitHub-PR_Flow-181717?logo=github&logoColor=white" alt="GitHub PR Flow">
 </p>
 
-## Contents
-
-1. [Overview](#overview) · [Architecture](#architecture) · [Pipeline](#pipeline) · [Results](#results) · [Screens](#screens) · [API Contract](#api-contract) · [Team](#team)
-2. [Quick Start](#quick-start)
-3. [Folder Structure](#folder-structure)
-4. [Limitations · Next Steps](#limitations--next-steps)
-5. [Notes](#notes)
-
 <br>
 
 ## Overview
