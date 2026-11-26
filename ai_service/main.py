@@ -22,25 +22,7 @@ IMAGE_SIZE = 640
 PERSON_CONFIDENCE = 0.25
 TRACKER = "bytetrack.yaml"
 
-KEYPOINT_NAMES = (
-    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
-    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-    "left_wrist", "right_wrist", "left_hip", "right_hip",
-    "left_knee", "right_knee", "left_ankle", "right_ankle",
-)
-
-FRAME_FEATURE_NAMES = [
-    f"{name}_{axis}" for name in KEYPOINT_NAMES for axis in ("x", "y")
-] + [
-    "left_elbow_angle",
-    "right_elbow_angle",
-    "left_knee_angle",
-    "right_knee_angle",
-]
-
 DANGER_CLASSES = ("shake", "drop", "look_away")
-
-
 # ===== 모델 로딩 =====
 def load_json(filename):
     with (MODEL_DIR / filename).open("r", encoding="utf-8") as file:
@@ -48,10 +30,13 @@ def load_json(filename):
 
 
 def validate_model(rf_model, feature_columns, training_info):
+    frame_feature_names = [
+        name.removeprefix("t00_") for name in feature_columns if name.startswith("t00_")
+    ]
     expected_columns = [
         f"t{step:02d}_{name}"
         for step in range(training_info["sequence_steps"])
-        for name in FRAME_FEATURE_NAMES
+        for name in frame_feature_names
     ]
 
     # 학습 때와 특징 수·클래스·순서가 다르면 틀린 판정을 내기 전에 서버 시작을 막는다
