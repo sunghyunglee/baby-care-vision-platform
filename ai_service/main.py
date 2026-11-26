@@ -394,6 +394,48 @@ def build_window_features(features, timestamps, training_info):
 
     return results
 
+def predict_windows(rf_model, windows, feature_columns):
+    results = []
+
+    for window in windows:
+        vector = window["features"]
+
+        if vector is None:
+            results.append({
+                "start": window["start"],
+                "end": window["end"],
+                "action": None,
+                "confidence": None,
+                "probabilities": None,
+            })
+
+            continue
+
+        if vector.shape != (len(feature_columns),):
+            raise ValueError("Invalid feature vector shape")
+
+        probabilities = rf_model.predict_proba(
+            vector.reshape(1, -1)
+        )[0]
+
+        best_index = int(np.argmax(probabilities))
+
+        results.append({
+            "start": window["start"],
+            "end": window["end"],
+            "action": str(rf_model.classes_[best_index]),
+            "confidence": float(probabilities[best_index]),
+            "probabilities": {
+                str(label): float(probability)
+                for label, probability in zip(
+                    rf_model.classes_,
+                    probabilities,
+                )
+            },
+        })
+
+    return results
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     model = load_rf_model()
