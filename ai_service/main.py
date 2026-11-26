@@ -3,6 +3,7 @@ import math
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Lock
 
 import cv2
 import joblib
@@ -10,7 +11,6 @@ import numpy as np
 import torch
 from fastapi import FastAPI
 from ultralytics import YOLO
-from threading import Lock
 
 
 MODEL_DIR = Path(__file__).resolve().parent / "models"
@@ -51,6 +51,7 @@ FRAME_FEATURE_NAMES = [
 ]
 
 DANGER_CLASSES = ("shake", "drop", "look_away")
+
 
 def load_rf_model():
     model_path = MODEL_DIR / "rf_action_baseline.joblib"
@@ -102,7 +103,9 @@ def track_video(video_path, pose_model):
         if not cap.isOpened():
             raise ValueError("Cannot open video")
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if not math.isfinite(fps) or fps <= 0:
+            fps = 30.0
 
         while True:
             ok, frame = cap.read()
@@ -126,19 +129,16 @@ def track_video(video_path, pose_model):
                 result.boxes is not None
                 and result.boxes.id is not None
                 and result.keypoints is not None
-                and result.keypoints.conf is not None
             ):
                 ids = result.boxes.id.cpu().numpy().astype(int)
                 boxes = result.boxes.xyxy.cpu().numpy()
                 keypoints = result.keypoints.xy.cpu().numpy()
-                confidences = result.keypoints.conf.cpu().numpy()
 
                 for i, track_id in enumerate(ids):
                     persons.append({
                         "track_id": int(track_id),
                         "box": boxes[i],
                         "kp": keypoints[i],
-                        "kp_conf": confidences[i],
                     })
 
             frames.append({
@@ -161,6 +161,7 @@ def track_video(video_path, pose_model):
             tracker.reset()
 
     return frames, fps
+
 
 def box_area(box):
     width = max(box[2] - box[0], 0)
@@ -185,6 +186,7 @@ def select_main_track(frames):
         return None
 
     return max(scores, key=scores.get)
+
 
 def normalize_keypoints(keypoints):
     keypoints = np.asarray(keypoints, dtype=np.float32)
@@ -284,6 +286,7 @@ def extract_frame_features(frames, main_track):
         np.stack(features),
         np.asarray(timestamps, dtype=np.float64),
     )
+
 
 def sliding_windows(timestamps, window_seconds, stride_seconds):
     if len(timestamps) == 0:
@@ -396,6 +399,7 @@ def build_window_features(features, timestamps, training_info):
 
     return results
 
+
 def predict_windows(rf_model, windows, feature_columns):
     results = []
 
@@ -437,6 +441,7 @@ def predict_windows(rf_model, windows, feature_columns):
         })
 
     return results
+
 
 def decide_video(predictions, training_info):
     threshold = training_info["danger_threshold"]
@@ -483,6 +488,7 @@ def decide_video(predictions, training_info):
 
     return "SAFE"
 
+
 def predict_video(video_path, app: FastAPI) -> str:
     pose_model = app.state.pose_model
     rf_model = app.state.rf_model
@@ -498,7 +504,8 @@ def predict_video(video_path, app: FastAPI) -> str:
     if expected_columns != feature_columns:
         raise ValueError("Feature column order mismatch")
 
-    frames, _ = track_video(video_path, pose_model)
+    with app.state.pose_lock:
+        frames, _ = track_video(video_path, pose_model)
 
     main_track = select_main_track(frames)
 
@@ -526,6 +533,7 @@ def predict_video(video_path, app: FastAPI) -> str:
     )
 
     return decide_video(predictions, training_info)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
