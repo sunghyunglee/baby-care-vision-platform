@@ -42,15 +42,6 @@ def load_pose_model():
     return YOLO(str(model_path))
 
 
-if __name__ == "__main__":
-    model = load_rf_model()
-    feature_columns = load_json("rf_feature_columns.json")
-    training_info = load_json("rf_training_info.json")
-
-    validate_model(model, feature_columns, training_info)
-
-    pose_model = load_pose_model()
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     model = load_rf_model()
