@@ -28,17 +28,7 @@ def load_json(filename):
     with (MODEL_DIR / filename).open("r", encoding="utf-8") as file:
         return json.load(file)
 
-
-def validate_model(rf_model, training_info):
-    # 학습 때와 특징 수·클래스가 다르면 틀린 판정을 내기 전에 서버 시작을 막는다
-    if rf_model.n_features_in_ != training_info["feature_count"]:
-        raise ValueError("Training feature count mismatch")
-
-    if rf_model.classes_.tolist() != training_info["classes"]:
-        raise ValueError("Model classes mismatch")
-
-
-def load_models():
+def load_models(): 
     rf_model = joblib.load(MODEL_DIR / "rf_action_baseline.joblib")
     training_info = load_json("rf_training_info.json")
 
@@ -50,7 +40,14 @@ def load_models():
         "pose_model": YOLO(str(MODEL_DIR / "yolo11n-pose.pt")),
     }
 
+def validate_model(rf_model, training_info):
+    # 학습 때와 특징 수·클래스가 다르면 틀린 판정을 내기 전에 서버 시작을 막는다
+    if rf_model.n_features_in_ != training_info["feature_count"]:
+        raise ValueError("Training feature count mismatch")
 
+    if rf_model.classes_.tolist() != training_info["classes"]:
+        raise ValueError("Model classes mismatch")
+        
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 요청마다 모델 파일을 다시 읽지 않도록 서버 시작 때 한 번만 올려둔다
@@ -59,34 +56,13 @@ async def lifespan(app: FastAPI):
     app.state.pose_lock = Lock()
     yield
 
-
 app = FastAPI(lifespan=lifespan)
-
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-
-@app.post("/predict")
-def predict(file: UploadFile):
-    suffix = Path(file.filename or "").suffix or ".mp4"
-
-    # OpenCV는 메모리가 아니라 파일 경로로만 영상을 열 수 있어서 임시 파일로 저장한다
-    with tempfile.NamedTemporaryFile(suffix=suffix) as temp_video:
-        shutil.copyfileobj(file.file, temp_video)
-        temp_video.flush()
-
-        try:
-            result = analyze_video(temp_video.name, app.state.models, app.state.pose_lock)
-        except ValueError as error:
-            # 분석할 수 없는 영상을 SAFE로 보내지 않고 이유와 함께 422로 알린다
-            raise HTTPException(status_code=422, detail=str(error)) from error
-
-    return {"result": result}
-
-
-def track_video(video_path, pose_model):
+def track_video(video_path, pose_model): # 영상 -> 프레임별 사람 관절 좌표로 바꾸기
     device = 0 if torch.cuda.is_available() else "cpu"
     capture = cv2.VideoCapture(str(video_path))
     frames = []
@@ -147,7 +123,6 @@ def track_video(video_path, pose_model):
 
     return frames
 
-
 def select_main_track(frames):
     scores = defaultdict(float)
 
@@ -164,7 +139,6 @@ def select_main_track(frames):
 
     return max(scores, key=scores.get)
 
-
 def calculate_angle(point_a, point_b, point_c):
     vector_ba = point_a - point_b
     vector_bc = point_c - point_b
@@ -175,7 +149,6 @@ def calculate_angle(point_a, point_b, point_c):
 
     cosine = np.dot(vector_ba, vector_bc) / norm_product
     return float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))))
-
 
 def build_frame_feature(keypoints):
     scale = np.linalg.norm(keypoints[5] - keypoints[6])
@@ -202,7 +175,6 @@ def build_frame_feature(keypoints):
 
     return feature
 
-
 def extract_frame_features(frames, main_track):
     features = []
     timestamps = []
@@ -220,7 +192,6 @@ def extract_frame_features(frames, main_track):
 
     return np.array(features), np.array(timestamps)
 
-
 def resample_sequence(features, timestamps, steps):
     # 창마다 프레임 수가 달라서 학습 때처럼 시간 간격을 고르게 30칸으로 맞춘다
     original_x = (timestamps - timestamps[0]) / (timestamps[-1] - timestamps[0])
@@ -230,7 +201,6 @@ def resample_sequence(features, timestamps, steps):
         [np.interp(target_x, original_x, features[:, column]) for column in range(features.shape[1])],
         axis=1,
     )
-
 
 def build_window_features(features, timestamps, training_info):
     window_seconds = training_info["window_seconds"]
@@ -253,7 +223,6 @@ def build_window_features(features, timestamps, training_info):
         start += stride_seconds
 
     return windows
-
 
 def decide_result(windows, rf_model, training_info):
     if not windows:
@@ -292,7 +261,6 @@ def decide_result(windows, rf_model, training_info):
 
     return "SAFE"
 
-
 def analyze_video(video_path, models, pose_lock):
     training_info = models["training_info"]
 
@@ -307,3 +275,20 @@ def analyze_video(video_path, models, pose_lock):
 
     windows = build_window_features(features, timestamps, training_info)
     return decide_result(windows, models["rf_model"], training_info)
+
+@app.post("/predict")
+def predict(file: UploadFile):
+    suffix = Path(file.filename or "").suffix or ".mp4"
+
+    # OpenCV는 메모리가 아니라 파일 경로로만 영상을 열 수 있어서 임시 파일로 저장한다
+    with tempfile.NamedTemporaryFile(suffix=suffix) as temp_video:
+        shutil.copyfileobj(file.file, temp_video)
+        temp_video.flush()
+
+        try:
+            result = analyze_video(temp_video.name, app.state.models, app.state.pose_lock)
+        except ValueError as error:
+            # 분석할 수 없는 영상을 SAFE로 보내지 않고 이유와 함께 422로 알린다
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
+    return {"result": result}
