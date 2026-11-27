@@ -24,7 +24,7 @@ TRACKER = "bytetrack.yaml"
 DANGER_CLASSES = ("shake", "drop", "look_away")
 
 
-def load_json(filename):
+def load_json(filename): # models.py json파일 읽기
     with (MODEL_DIR / filename).open("r", encoding="utf-8") as file:
         return json.load(file)
 
@@ -49,7 +49,7 @@ def validate_model(rf_model, training_info):
         raise ValueError("Model classes mismatch")
         
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI): # 한번만 실행, 모델을 app.state에 올려둠
     # 요청마다 모델 파일을 다시 읽지 않도록 서버 시작 때 한 번만 올려둔다
     app.state.models = load_models()
     # YOLO 추적기는 이전 프레임을 기억해서 두 영상이 동시에 들어오면 사람 번호가 섞인다
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 @app.get("/health")
-def health():
+def health(): # 서버 키고 모델로딩까지 된건지 확인
     return {"status": "ok"}
 
 def track_video(video_path, pose_model): # 영상 -> 프레임별 사람 관절 좌표로 바꾸기
@@ -123,7 +123,7 @@ def track_video(video_path, pose_model): # 영상 -> 프레임별 사람 관절 
 
     return frames
 
-def select_main_track(frames):
+def select_main_track(frames): # 영상에 여러 사람이 등장할수 있어서, 분석할 사람 한명을 고름
     scores = defaultdict(float)
 
     for frame in frames:
@@ -139,7 +139,7 @@ def select_main_track(frames):
 
     return max(scores, key=scores.get)
 
-def calculate_angle(point_a, point_b, point_c):
+def calculate_angle(point_a, point_b, point_c): # 관절각도 구하는 방식
     vector_ba = point_a - point_b
     vector_bc = point_c - point_b
     norm_product = np.linalg.norm(vector_ba) * np.linalg.norm(vector_bc)
@@ -150,7 +150,7 @@ def calculate_angle(point_a, point_b, point_c):
     cosine = np.dot(vector_ba, vector_bc) / norm_product
     return float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))))
 
-def build_frame_feature(keypoints):
+def build_frame_feature(keypoints): # 프레임별 관절 17개를 -> keypoint 34개 + 관절각도 4개
     scale = np.linalg.norm(keypoints[5] - keypoints[6])
 
     # 어깨가 안 잡혀 어깨너비로 정규화할 수 없는 프레임은 학습 때처럼 버린다
@@ -175,7 +175,7 @@ def build_frame_feature(keypoints):
 
     return feature
 
-def extract_frame_features(frames, main_track):
+def extract_frame_features(frames, main_track): # 모든 프레임에서 주인공만 골라서 38개 특징과 시각 모으기 : 프레임수 x 38
     features = []
     timestamps = []
 
@@ -192,7 +192,7 @@ def extract_frame_features(frames, main_track):
 
     return np.array(features), np.array(timestamps)
 
-def resample_sequence(features, timestamps, steps):
+def resample_sequence(features, timestamps, steps): # 2초창 하나를 30칸으로 맞추기 
     # 창마다 프레임 수가 달라서 학습 때처럼 시간 간격을 고르게 30칸으로 맞춘다
     original_x = (timestamps - timestamps[0]) / (timestamps[-1] - timestamps[0])
     target_x = np.linspace(0.0, 1.0, steps)
@@ -202,7 +202,7 @@ def resample_sequence(features, timestamps, steps):
         axis=1,
     )
 
-def build_window_features(features, timestamps, training_info):
+def build_window_features(features, timestamps, training_info): # 영상을 2초씩 0.5초간격으로 겹치게 만들어서 창을 만들고 30 X 38 (1sec x 38 )
     window_seconds = training_info["window_seconds"]
     stride_seconds = training_info["window_stride_seconds"]
     steps = training_info["sequence_steps"]
@@ -224,7 +224,7 @@ def build_window_features(features, timestamps, training_info):
 
     return windows
 
-def decide_result(windows, rf_model, training_info):
+def decide_result(windows, rf_model, training_info): # 창마다 rf로 확률내고 위험행동이 0.35 이상으로 2창 연속이면 danger, 아니면 safe 기준
     if not windows:
         raise ValueError("No analysis windows")
 
@@ -261,7 +261,7 @@ def decide_result(windows, rf_model, training_info):
 
     return "SAFE"
 
-def analyze_video(video_path, models, pose_lock):
+def analyze_video(video_path, models, pose_lock): # 영상분석
     training_info = models["training_info"]
 
     with pose_lock:
@@ -276,8 +276,8 @@ def analyze_video(video_path, models, pose_lock):
     windows = build_window_features(features, timestamps, training_info)
     return decide_result(windows, models["rf_model"], training_info)
 
-@app.post("/predict")
-def predict(file: UploadFile):
+@app.post("/predict") 
+def predict(file: UploadFile): # 파일의 입력부/출력부
     suffix = Path(file.filename or "").suffix or ".mp4"
 
     # OpenCV는 메모리가 아니라 파일 경로로만 영상을 열 수 있어서 임시 파일로 저장한다
@@ -292,3 +292,4 @@ def predict(file: UploadFile):
             raise HTTPException(status_code=422, detail=str(error)) from error
 
     return {"result": result}
+    
