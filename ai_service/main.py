@@ -69,16 +69,16 @@ def predict(file: UploadFile):
     return send_result(result)
 
 # ===== 로직부 =====
-#======
+
 # 1. load_json : models 폴더 안의 JSON 파일 하나를 읽어 파이썬 dict로 돌려준다
-#======
+
 def load_json(filename): # models.py json파일 읽기
     with (MODEL_DIR / filename).open("r", encoding="utf-8") as file:
         return json.load(file)
 
-#======
+
 # 2. load_models : RF 모델(joblib)·학습 설정(json)·YOLO 포즈 모델을 읽어 하나로 묶어 돌려준다
-#======
+
 def load_models(): 
     rf_model = joblib.load(MODEL_DIR / "rf_action_baseline.joblib")
     training_info = load_json("rf_training_info.json")
@@ -91,9 +91,9 @@ def load_models():
         "pose_model": YOLO(str(MODEL_DIR / "yolo11n-pose.pt")),
     }
 
-#======
+
 # 3. validate_model : RF 모델의 특징 수·클래스가 학습 설정과 같은지 확인하고, 다르면 서버 시작을 막는다
-#======
+
 def validate_model(rf_model, training_info):
     # 학습 때와 특징 수·클래스가 다르면 틀린 판정을 내기 전에 서버 시작을 막는다
     if rf_model.n_features_in_ != training_info["feature_count"]:
@@ -102,15 +102,15 @@ def validate_model(rf_model, training_info):
     if rf_model.classes_.tolist() != training_info["classes"]:
         raise ValueError("Model classes mismatch")
         
-#======
+
 # 4. health : (중복) 위쪽 /health 와 같은 내용의 함수, 주소가 연결되지 않아 실행되지 않는다
-#======
+
 def health(): # 서버 키고 모델로딩까지 된건지 확인
     return {"status": "ok"}
 
-#======
+
 # 5. track_video : 영상을 프레임 단위로 읽어 프레임마다 사람별 번호·박스·관절 17개와 시각을 모은다
-#======
+
 def track_video(video_path, pose_model): # 영상 -> 프레임별 사람 관절 좌표로 바꾸기
     device = 0 if torch.cuda.is_available() else "cpu"
     capture = cv2.VideoCapture(str(video_path))
@@ -172,9 +172,9 @@ def track_video(video_path, pose_model): # 영상 -> 프레임별 사람 관절 
 
     return frames
 
-#======
+
 # 6. select_main_track : 영상 전체에서 박스 넓이 합이 가장 큰 사람을 분석 대상(주인공)으로 고른다
-#======
+
 def select_main_track(frames): # 영상에 여러 사람이 등장할수 있어서, 분석할 사람 한명을 고름
     scores = defaultdict(float)
 
@@ -191,9 +191,9 @@ def select_main_track(frames): # 영상에 여러 사람이 등장할수 있어�
 
     return max(scores, key=scores.get)
 
-#======
+
 # 7. calculate_angle : 세 점으로 가운데 관절(point_b)의 각도를 도(°) 단위로 구한다
-#======
+
 def calculate_angle(point_a, point_b, point_c): # 관절각도 구하는 방식
     vector_ba = point_a - point_b
     vector_bc = point_c - point_b
@@ -205,9 +205,9 @@ def calculate_angle(point_a, point_b, point_c): # 관절각도 구하는 방식
     cosine = np.dot(vector_ba, vector_bc) / norm_product
     return float(np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0))))
 
-#======
+
 # 8. build_frame_feature : 프레임 하나의 관절 17개를 정규화 좌표 34개 + 팔꿈치·무릎 각도 4개 = 특징 38개로 바꾼다
-#======
+
 def build_frame_feature(keypoints): # 프레임별 관절 17개를 -> keypoint 34개 + 관절각도 4개
     scale = np.linalg.norm(keypoints[5] - keypoints[6])
 
@@ -233,9 +233,9 @@ def build_frame_feature(keypoints): # 프레임별 관절 17개를 -> keypoint 3
 
     return feature
 
-#======
+
 # 9. extract_frame_features : 모든 프레임에서 주인공의 특징 38개와 그 시각만 모아 배열로 돌려준다
-#======
+
 def extract_frame_features(frames, main_track): # 모든 프레임에서 주인공만 골라서 38개 특징과 시각 모으기 : 프레임수 x 38
     features = []
     timestamps = []
@@ -253,9 +253,9 @@ def extract_frame_features(frames, main_track): # 모든 프레임에서 주인�
 
     return np.array(features), np.array(timestamps)
 
-#======
+
 # 10. resample_sequence : 2초 창 하나의 프레임들을 보간해서 정확히 30칸 × 38로 맞춘다
-#======
+
 def resample_sequence(features, timestamps, steps): # 2초창 하나를 30칸으로 맞추기 
     # 창마다 프레임 수가 달라서 학습 때처럼 시간 간격을 고르게 30칸으로 맞춘다
     original_x = (timestamps - timestamps[0]) / (timestamps[-1] - timestamps[0])
@@ -266,9 +266,9 @@ def resample_sequence(features, timestamps, steps): # 2초창 하나를 30칸으
         axis=1,
     )
 
-#======
+
 # 11. build_window_features : 영상을 2초 창으로 0.5초씩 밀며 자르고, 창마다 RF 입력인 숫자 1140개(30 × 38) 한 줄을 만든다
-#======
+
 def build_window_features(features, timestamps, training_info): # 영상을 2초씩 0.5초간격으로 겹치게 만들어서 창을 만들고 30 X 38 (1sec x 38 )
     window_seconds = training_info["window_seconds"]
     stride_seconds = training_info["window_stride_seconds"]
@@ -291,9 +291,9 @@ def build_window_features(features, timestamps, training_info): # 영상을 2초
 
     return windows
 
-#======
+
 # 12. decide_result : 창마다 RF로 행동 확률을 내고, 위험 행동이 연속으로 나오는지 보고 SAFE / DANGER를 정한다
-#======
+
 def decide_result(windows, rf_model, training_info): # 창마다 rf로 확률내고 위험행동이 0.35 이상으로 2창 연속이면 danger, 아니면 safe 기준
     if not windows:
         raise ValueError("No analysis windows")
@@ -331,9 +331,9 @@ def decide_result(windows, rf_model, training_info): # 창마다 rf로 확률내
 
     return "SAFE"
 
-#======
+
 # 13. analyze_video : 5~12번 함수를 순서대로 실행해서 영상 하나의 최종 결과("SAFE"/"DANGER")를 돌려준다
-#======
+
 def analyze_video(video_path, models, pose_lock): # 영상분석
     training_info = models["training_info"]
 
